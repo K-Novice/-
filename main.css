@@ -1,0 +1,16 @@
+button.open-btn {
+    border: black;
+    border-radius: 10;
+    padding: 10px 30px;
+    background-color: rgb(104, 219, 133);
+    color: rgb(0, 0, 0);
+}
+
+div.alert-box {
+    background-color: rgb(135, 222, 150);
+    color: rgb(255, 255, 255);
+    padding: 20px;
+    border-radius: 0px;
+    display: none;
+}
+

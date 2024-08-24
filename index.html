@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="EUC-KR">  
+    <meta http-equiv="refresh" content="10">
+    <meta name="author" content="DEBUGGER">
+    <meta name="description" content="페이지 짧게 요약">
+    <meta name="keywords" content="디버깅, 테스트">
+    <meta http-equiv="x-ua-compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="main.css">
+    
+    <title>Document</title>
+
+</head>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+
+<body>
+    <div class="alert-box" id="alert">
+        <p> 
+            <h1>
+                <a href="https://www.youtube.com" id="title" target="_blank">
+                    alert
+                </a>
+                <img src="https://images.mypetlife.co.kr/content/uploads/2023/04/18140421/AdobeStock_212879665-1024x670.jpeg" alt="귀여운 강아지가 뛰어다니는 이미지" height="200" width="400">
+            </h1>
+        </p>
+        <button id="close"> X </button>
+    </div>
+
+
+    <div>
+        <button id="버튼1">
+            버튼 1
+        </button>
+
+        <button id="버튼2">
+            버튼 2
+        </button>
+    </div>
+    <hr>
+    <ol>
+        <li>테스트1</li>
+        <li>테스트2</li>
+    </ol> 
+    <ul>
+        <li>테스트3</li>
+        <li>테스트4</li>
+    </ul>
+    <span style="color: blueviolet;">
+        안녕
+    </span>하세요
+    <hr>
+    <div>
+        <input name="text" type="text" placeholder="입력하세요.(1~5글자 이내)" maxlength="4">
+        <br>
+        <input name="버튼" type="button" value="안녕하세요">
+        <br>
+        <input name="색" type="color">
+        <br>
+        <input name="범위" type="range" max="100" min="0" step="10">
+        <br>
+        <input name="날짜" type="date">
+        <br>
+        <select name="select테스트" multiple>
+            <option value="테스트1" selected>고양이</option>
+            <br>
+            <option value="테스트2">강아지</option>
+        </select>
+        <textarea name="textarea테스트1" rows="10" cols="10">기본적으로 적혀있는 텍스트</textarea>
+    </div>
+    <hr>
+    <form accept="exam.php" method="POST">
+        <input type="text" placeholder="아이디">
+        <br>
+        <input type="text" placeholder="비밀번호">
+        <br>
+        <input type="submit" value="확인">
+    </form>
+</body>
+
+
+<!-- 자바스크립트 -->
+<script>
+    function 알림창열기(name) {
+        $('#title').html(name);
+        document.getElementById('alert').style.display = 'block';
+    }
+
+    document.getElementById("close").addEventListener('mouseover', function(){
+        document.getElementById("alert").style.display = 'none';
+    });
+    document.getElementById("버튼1").addEventListener('mouseover', function(){
+        $('#title').html("네이버 바로가기.");
+        $('#title').attr('href', 'https://www.naver.com');
+        document.getElementById("alert").style.display = 'block';
+    });
+    document.getElementById("버튼2").addEventListener('mouseover', function(){
+        $('#title').html('유튜브 바로가기.');
+        $('#title').attr('href', 'https://www.youtube.com');
+        document.getElementById("alert").style.display = 'block';
+    });
+</script>
+</html>
