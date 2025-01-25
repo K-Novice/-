@@ -1,0 +1,1227 @@
+const bot = BotManager.getCurrentBot();
+
+importClass(java.lang.System);
+importClass(java.util.Random);
+importClass(java.io.File);
+
+const prefix = "";
+const localPath = "/sdcard/rpg/";
+
+let commands = [
+  "내정보",
+  "이동",
+  "대화",
+  "수락",
+  "거절",
+  "사냥",
+  "선택",
+  "공격"
+];
+
+commands = commands.map(v => prefix + v);
+
+let quest = new Quest(getFile("quest")) || new Quest();
+let map = new GameMap(getFile("map")) || new GameMap();
+let npc = new Npc(getFile("npc")) || new Npc();
+let mob = new Mob(getFile("mob")) || new Mob();
+let hunt = new Hunt(getFile("hunt")) || new Hunt();
+let skill = new Skill(getFile("skill")) || new Skill();
+let player;
+
+let ev = false;
+const Lw = "\u200b".repeat(500);
+
+function onMessage(msg) {
+  try {
+  if(!msg.isMultiChat || !msg.content.startsWith(prefix)) return;
+  
+  if(!msg.room.includes("RPG")) return;
+  /*cmd = msg.content.replace(prefix, "");
+  player = new Player(msg.author.hash, msg.author.name, getFile(msg.author.hash)) || new Player(msg.author.hash, msg.author.name);
+*/
+  handleMessage(msg);
+
+  updateFile(msg.author.hash, player);
+  updateFile("hunt", hunt);
+  } catch(e) {Log.i(e.stack + "\n\n" + e, true);}
+}
+
+
+function handleMessage(msg) {
+  const reply = (message) => {
+   msg.reply(message);
+  };
+  
+  player = new Player(msg.author.hash, msg.author.name, getFile(msg.author.hash)) || new Player(msg.author.hash, msg.author.name);
+  
+  if(msg.content.startsWith(prefix + "ev")) {
+    reply(evaluate(msg.content.slice(2)));
+  }
+  
+  let cmd = commands.find(v => msg.content.startsWith(v))
+  if(!cmd) return;
+  
+  let args = msg.content.replace(cmd, "").split(" ");
+
+  switch(cmd) {
+    case commands[0]://내정보
+      if(msg.content.trim() === commands[0])
+        reply(player.statuses());
+      break;
+      
+      
+    case commands[1]://이동
+      if(msg.content.trim() === commands[1]) {
+        reply(player.statuses());
+      } else
+        moveByName(player, msg.content.slice(cmd.length).trim(), reply);
+      break;
+      
+      
+    case commands[2]://대화
+      reply(npc.talk(player, msg.content.slice(cmd.length).trim()));
+      break;
+      
+      
+    case commands[3]://수락
+      reply(npc.talk(player, player.npc, "y"));
+      break;
+      
+    case commands[4]://거절
+      reply(npc.talk(player, player.npc, "n"));
+      break;
+      
+      
+    case commands[5]://사냥
+      if(msg.content.trim() != cmd) return;
+      let nearMobs = player.getNearMobs();
+      let mobs = generateMobs(1, nearMobs);
+      //mobs = setRandomPos(mobs);
+      hunt.add([player], mobs);
+      reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
+      break;
+    
+    
+    case commands[6]://선택
+      player.choice = msg.content.replace(cmd, "").trim();
+      
+      if(player.choice != "mob" && player.choice != "player") {
+        player.choice = "mob";
+        reply("유효하지 않은 선택입니다.\n타겟이 자동으로 몹으로 지정됩니다.");
+        break;
+      }
+      reply(player.name + " 님의 선택: " + player.choice);
+      break;
+    
+    
+    case commands[7]://공격
+      let data = isValid(player, msg.content.replace(cmd, ""), "skill")
+      
+      if(!data) {
+        reply(false);
+        break;
+      }
+      
+      if(data.type == "list") {
+        reply(hunt.getList(player.hunt.id, player, skill.cache[data.skillName], player.choice));
+        break;
+      }
+      
+      if(data.type == "skill") {
+        hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillName]);
+        hunt.nextTurn(player.hunt.id, "players");
+        //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
+        reply(huntForm(player));
+        
+        while(hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
+          let index = hunt.cache[player.hunt.id].info.turn.mob.index;
+          let entity = hunt.cache[player.hunt.id].mobs[index]
+          
+          hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
+          hunt.nextTurn(player.hunt.id, "mobs");
+          //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
+          reply(huntForm(player));
+        }
+      }
+      break;
+  }
+  updateFile(msg.author.hash, player);
+}
+
+function isValid(player, content, type) {
+  switch(type) {
+    case "skill":
+      if(player.skills.some(v => content.includes(v))) {
+        
+        let skillName = player.skills.filter(v => content.includes(v));
+        skillName = skillName.find(v => {
+          if(!isNaN(content.replace(v, "").trim()))
+          return true;
+        });
+                
+        if(skillName == null) return false;
+        
+        let mobIndex = content
+          .replace(skillName, "")
+          .trim();
+          
+        if(mobIndex == "")
+          return {
+            skillName: skillName,
+            type: "list"
+          };
+          
+        mobIndex = parseInt(mobIndex);
+        
+        return {
+          skillName: skillName,
+          type: "skill",
+          index: parseInt(mobIndex) - 1
+        };
+      }
+      break;
+  }
+}
+
+function huntForm(player) {
+  let data = hunt.cache[player.hunt.id];
+  
+  let buff = {
+    mob: data.info.status.mobs.effects.buff,
+    player: data.info.status.players.effects.buff
+  }
+  let debuff = {
+    mob: data.info.status.mobs.effects.debuff,
+    player: data.info.status.players.effects.debuff
+  }
+  
+  return `
+[Players]
+{버프}
+ •STR 버프: ${buff.player.stat.str} (×${Number(buff.player.stat.counts) || 0})
+ •AGI 버프: ${buff.player.stat.agi} (×${Number(buff.player.stat.counts) || 0})
+ •DEF 버프: ${buff.player.stat.def} (×${Number(buff.player.stat.counts) || 0})
+
+{디버프}
+ •STR 버프: ${debuff.player.stat.str} (×${Number(debuff.player.stat.counts) || 0})
+ •AGI 버프: ${debuff.player.stat.agi} (×${Number(debuff.player.stat.counts) || 0})
+ •DEF 버프: ${debuff.player.stat.def} (×${Number(debuff.player.stat.counts) || 0})
+
+{플레이어}
+${
+  data
+    .players
+      .map((v, i) => {
+        if(data.info.turn.player.index == i
+        && data.info.turn.player.isOver == false)
+          return "> " + v.name + " (HP: " + v.stat.hp + ")";
+       
+        return (i + 1) + ". " + v.name + " (HP: " + v.stat.hp + ")";
+      }).join("\n")
+}
+
+=============
+
+[Mobs]
+{버프}
+ •STR 버프: ${buff.mob.stat.str} (×${Number(buff.mob.stat.counts) || 0})
+ •AGI 버프: ${buff.mob.stat.agi} (×${Number(buff.mob.stat.counts) || 0})
+ •DEF 버프: ${buff.mob.stat.def} (×${Number(buff.mob.stat.counts) || 0})
+
+{디버프}
+ •STR 버프: ${debuff.mob.stat.str} (×${Number(debuff.mob.stat.counts) || 0})
+ •AGI 버프: ${debuff.mob.stat.agi} (×${Number(debuff.mob.stat.counts) || 0})
+ •DEF 버프: ${debuff.mob.stat.def} (×${Number(debuff.mob.stat.counts) || 0})
+
+{몹}
+${
+  data
+    .mobs
+      .map((v, i) => {
+        if(data.info.turn.mob.index == i
+        && data.info.turn.mob.isOver == false)
+          return "> " + v.name + " (HP: " + v.stat.hp + ")";
+       
+        return (i + 1) + ". " + v.name + " (HP: " + v.stat.hp + ")";
+      }).join("\n")
+}`;
+}
+function evaluate(code) {
+    let start, res;
+    try {
+      start = System.nanoTime();
+      res = eval(code);
+      start = (System.nanoTime() - start) / 1000000000;
+      res = 'The Time Required: ' + start + ' sec\nResult: ' + res;
+    }    catch (e) {
+  res = 'Error Name : ' + e.name + '\nError Message : ' + e.message + '\nError Line : ' + e.lineNumber;
+}
+    return res;
+  }
+
+function GameMap(data) {
+  this.locations = data.locations || {};
+}
+
+GameMap.prototype.addLocation = function(name, description, x, y, type, isHidden) {
+  this.locations[name] = {
+  name: name, 
+  description: description, 
+  x: x, 
+  y: y, 
+  type: (type === true) || (type === undefined) ? "out" : "in", 
+  isHidden: isHidden,
+  connectedLocation: [],
+  connectedNpc: [],
+  connectedMob: [],
+  quest: {},
+  talking: false,
+  requirement: {
+    lv: 0,
+    item: []
+  }};
+};
+
+GameMap.prototype.connectLocations = function(name, target) {
+  if (!this.locations[name] || !this.locations[target]) 
+    return;
+  if (this.locations[name].type == "out") {
+    this.locations[target].outX = this.locations[name].x;
+    this.locations[target].outY = this.locations[name].y;
+  }
+  this.locations[name].connectedLocation.push(target);
+  this.locations[target].connectedLocation.push(name);
+};
+
+GameMap.prototype.getName = function(x, y, type, outX, outY) {
+  type = type === true ? "out" : "in";
+  for(let key in this.locations){
+    let name = this.locations[key];
+    if(name.x === x && name.y === y && name.type === type && name.outX === outX && name.outY === outY) {
+      return key;
+    }
+  }
+  return null;
+};
+
+GameMap.prototype.setRequirement = function(name, newLv, newItem) {
+  this.locations[name].requirement.lv = newLv;
+  this.locations[name].requirement.item = newItem;
+};
+
+
+
+function Player(userHash, name, data) {
+  this.name = data.name|| name;
+  this.userHash = data.userHash || userHash;
+  this.lv = data.lv || 0;
+  this.exp = data.exp || 0;
+  this.hunger = data.hunger || 100;
+  this.stat = data.stat || {
+    hp: 50,
+    max_hp: 50,
+    agi: 30,
+    str: 30,
+    stamina: 50,
+    criticalPercent: 0,
+    inteligence: 10
+  };
+  this.status = data.status || {
+    stun: 0,
+    dotDamage: {},
+    dotHeal: {}
+  };
+  this.inventory = data.inventory || [];
+  this.skills = data.skills || [];
+  this.choice = data.choice || "mob";
+  this.talking = data.talking || false;
+  this.npc = data.npc || null;
+  this.quest = data.quest || null;
+  this.moving = data.moving || false;
+  this.movingTime = data.movingTime || null;
+  this.hunt = data.hunt || {
+    id: null,
+    type: false
+  };
+  this.location = data.location || {
+  in: {
+  x: 0, 
+  y: 0}, 
+  out: {
+  x: 0, 
+  y: 0}
+  };
+}
+
+Player.prototype.moveInLocation = function(newX, newY, reply) {
+  let x = this.location.in.x - newX;
+  let y = this.location.in.y - newY;
+  x *= x;
+  y *= y;
+  let distance = Math.sqrt(x + y).toFixed(2);
+  let player = this;
+  let time = distance * 100;
+  this.moving = true;
+  if(!reply) {
+    player.location.in.x = newX || 0;
+    player.location.in.y = newY || 0;
+    this.moving = false;
+    updateFile(this.userHash, this);
+    return;
+  }
+  reply(Math.round(time/2000) + "초 이후 이동이 완료됩니다.\n거리: " + time + "m");
+  this.movingTime = setTimeout(() => {
+    player.location.in.x = newX || 0;
+    player.location.in.y = newY || 0;
+    player.moving = false;
+    reply("Moving Complete");
+    updateFile(this.userHash, this);
+  }, Math.round(time/2));
+};
+
+Player.prototype.moveOutLocation = function(newX, newY, reply) {
+  let x = this.location.out.x - newX;
+  let y = this.location.out.y - newY;
+  x *= x;
+  y *= y;
+  let distance = Math.sqrt(x + y).toFixed(2);
+  let player = this;
+  let time = distance * 1000;
+  this.moving = true;
+  updateFile(this.userHash, this);
+  
+  reply(Math.round(time/2000) + "초 이후 이동이 완료됩니다.\n거리: " + distance + "km");
+  this.movingTime = setTimeout(() => {
+    player.location.out.x = newX || 0;
+    player.location.out.y = newY || 0;
+    player.moving = false;
+    reply("Moving Complete");
+    updateFile(this.userHash, this);
+  }, Math.round(time/2));
+};
+
+Player.prototype.statuses = function () {
+  if(this.moving) return "이동 중에는 정보확인이 불가능합니다.";
+  let pos = this.location;
+  let maps;
+  let movedPos = map.getName(pos.in.x, pos.in.y, false, pos.out.x, pos.out.y);
+  if(!this.hunt.type) maps = map.locations[movedPos].connectedLocation.slice(1).filter(v => !v.isHidden);
+  else maps = map.locations[movedPos].connectedLocation.slice(1);
+  return "name: " + this.name + 
+    "\nID: " + this.userHash + 
+    "\nLv: " + this.lv +
+    "\nlocation: " + pos.in.x + ", " + pos.in.y + " (" + pos.out.x + ", " + pos.out.y + ")" +
+    "\n\nRegion: " + map.locations[movedPos].connectedLocation[0] + 
+    "\nRegion Description: " + map.locations[map.locations[movedPos].connectedLocation[0]].description + 
+    "\n\nnowLocation: " + movedPos + 
+    "\nLocation Description: " + map.locations[movedPos].description +
+    "\nLocation NPCs\n" + map.locations[movedPos].connectedNpc +
+    "\n\n" + 
+    questForm(this.quest) + 
+    "\n\nInventory" + this.inventory + 
+    "\n\nCan Go\n" + maps.map(v => map.locations[v]).map((v, i) => (i + 1) + v.name + 
+    "\ntype: " + v.type + 
+    "\n" + 
+    v.x + ", " + v.y + 
+    (v.type === "in" ? " (" + v.outX + ", " + v.outY + ")" : "")).join('\n\n');
+};
+
+Player.prototype.giveQuest = function (name) {
+  if(this.quest) return "You already have a quest \"" + this.quest + "\".";
+  if(!quest.quest[name]) return `quest "${name}" is not found`;
+  this.quest = quest.quest[name];
+};
+
+Player.prototype.deleteQuest = function() {
+  delete this.quest;
+};
+
+Player.prototype.giveSkill = function (name) {
+  if(this.skills[name]) return "You already have this skill \"" + this.quest + "\".";
+  if(!skill.cache[name]) return `Skill "${name}" is not found`;
+  if(!skill.cache[name].requirement.lv >= this.lv || skill.cache[name].requirement.item.filter(v => player.inventory.find(i => i == v)).length != 0) return "Can not give this skill \"" + name + "\"\n[Requirement]\nLv: " + skill.cache[name].requirement.lv + "\nItems: " + skill.cache[name].requirement.item.join(", ");
+    this.skills.push([name]);
+};
+
+Player.prototype.deleteQuest = function(name) {
+  delete this.skills[name];
+};
+
+Player.prototype.getNearMobs = function() {
+  let [In, Out] = [
+    this.location.in, 
+    this.location.out
+  ];
+  
+  let mapName = map
+    .getName(In.x, In.y, false, Out.x, Out.y);
+    
+  return Object.values(mob.kind)
+    .filter(entity => entity.connectedLocation
+      .includes(mapName));
+};
+
+function Mob(data) {
+  this.kind = data.kind || {};
+}
+
+Mob.prototype.add = function(name, description, skills, hp, agi, def, str, stamina, criticalPercent, inteligence) {
+  this.kind[name] = {
+  name: name, 
+  description: description, 
+  stat: {
+    hp: hp,
+    max_hp: hp,
+    agi: agi,
+    def: def,
+    str: str,
+    stamina: stamina,
+    criticalPercent: criticalPercent,
+    inteligence: inteligence
+  },
+  status: {
+    stun: 0,
+    dotDamage: {},
+    dotHeal: {}
+  },
+  hunt: {
+    id: null,
+    type: false
+  },
+  skills: skills,
+  location: {
+    in: {
+      x: 0,
+      y: 0
+    }
+  },
+  connectedLocation: []
+  };
+};
+
+Mob.prototype.remove = function(name) {
+  delete this.kind[name];
+};
+
+Mob.prototype.connectLocation = function(name, location) {
+  if (!this.kind[name] || !map.locations[location]) 
+    return false;
+  this.kind[name].connectedLocation.push(location);
+  map.locations[location].connectedMob.push(name);
+};
+
+
+
+function Quest(data) {
+  this.quest = data.quest || {};
+}
+
+Quest.prototype.add = function (type, name, description, lv, targetName, counts, items, exp) {
+  this.quest[name] = {
+    name: name,
+    description: description,
+    type: type
+  };
+  if(type == "battle") {
+    this.quest[name].requirement = {
+      lv: lv,
+      targetMob: {
+        name: targetName,
+        counts: counts
+      },
+      mobCounts: 0
+    };
+    this.quest[name].rewards = {
+      items: items,
+      exp: exp
+    };
+  }
+  
+  if(type == "explore") {
+    this.quest[name].requirement = {
+      lv: lv,
+      targetItem: {
+        name: targetName,
+        counts: counts
+      },
+      itemCounts: 0
+    };
+    this.quest[name].rewards = {
+      items: items,
+      exp: exp
+    };
+  }
+};
+
+
+function Npc(data) {
+    this.data = data.data || {};
+}
+
+Npc.prototype.set = function(name, description) {
+    this.data[name] = {
+        name: name,
+        description: description
+    };
+};
+
+Npc.prototype.makeDialogue = function(name, accept, decline, ask, questName) {
+  this.data[name].dialogue = {
+    accept: accept,
+    decline: decline,
+    ask: ask,
+    questName: questName
+  };
+};
+
+Npc.prototype.connectLocation = function(name, location) {
+  if (!this.data[name] || !map.locations[location]) 
+    return false;
+  this.data[name].connectedLocation = location;
+  map.locations[location].connectedNpc.push(name);
+};
+
+Npc.prototype.talk = function(player, npcName, answer) {
+  // NPC 존재 여부 확인
+  if (!this.data[npcName]) return `${npcName} does not exist.`;
+
+  let npc = this.data[npcName];
+  let dialogue = npc.dialogue;
+  if (!dialogue) return `${npcName} has nothing to say.`;
+  
+  // 퀘스트를 이미 받은 경우
+  if(player.quest) return `${npc.name}: "이미 수행중인 퀘스트가 있네요. 다음에 와 주세요!" `;
+  if(player.talking === true) {
+    if(answer && answer.trim().toUpperCase() === "Y") {
+      player.giveQuest(dialogue.questName);
+      plauer.npc = null;
+      player.talking = false;
+      updateFile(player.userHash, player);
+      return `${npc.name}: "${dialogue.accept}"`;
+    }
+    if(answer && answer.trim().toUpperCase() === "Y") {
+      player.npc = null;
+      player.talking = false;
+      updateFile(player.userHash, player);
+      return `${npc.name}: "${dialogue.decline}"`;
+    }
+  }
+  // 퀘스트를 받지 않은 경우, 퀘스트를 수락할지 물어봄
+  player.talking = true;
+  player.npc = npc.name;
+  updateFile(player.userHash, player);
+  return `${npc.name}: "${dialogue.ask}"\n\nDo you accept the quest "${dialogue.questName}"?\nReply with 'Y' or 'N'.`;
+};
+
+
+function moveByName(player, index, reply) {
+  if(player.moving) {
+    return reply("이미 이동 중입니다.");
+  }
+  let location = player.location;
+  let nowMapName = map.getName(location.in.x, location.in.y, false, location.out.x, location.out.y);
+  let canGo = map.locations[nowMapName].connectedLocation
+  
+  if(!player.hunt.type)
+    canGo = canGo.filter(v => !v.isHidden);
+  
+  if(isNaN(index))
+    index = canGo.indexOf(index);
+    
+  if(canGo[index]) {
+    let targetName = canGo[index];
+    let target = map.locations[targetName];
+
+    if(target.type != "in") return JSON.stringify(target);
+    if(target.requirement.lv > player.lv) return "Can not go there.\nRequirements\nlevel: " + target.requirement.lv + "\nItems: " + target.requirement.item;
+    if(target.requirement.item.filter(v => !player.inventory.includes(v)).length != 0) return "Can not go there.\nRequirements\nlevel: " + target.requirement.lv + "\nItems: " + target.requirement.item;
+
+    if(target.outX != player.location.out.x || target.outY != player.location.out.y) {
+      player.moveInLocation(target.x, target.y);
+      player.moveOutLocation(target.outX, target.outY, reply);
+    } else
+      player.moveInLocation(target.x, target.y, reply);
+    return null;
+  }
+  return reply("Can not go there.");
+}
+
+function Hunt(data) {
+  this.cache = data.hunt || {};
+}
+
+Hunt.prototype.add = function(players, mobs) {
+  let uuid;
+  
+  while(this.cache[uuid] || uuid == undefined) {
+    uuid = "xxxxxx"
+    .replace(/x/g, () => {
+      return ((Math.random() * 16 | 0) & 0x3)
+        .toString();
+      });
+  }
+  
+  players.map(entity => entity.hunt.id = uuid);
+  mobs.map(entity => entity.hunt.id = uuid);
+  
+  this.cache[uuid] = {
+    players: players,
+    mobs: mobs,
+    info: {
+      isStarted: false,
+      turn: {
+        player: {
+          index: 0,
+          isOver: false
+        },
+        mob: {
+          index: 0,
+          isOver: true
+        },
+        phase: 0
+      },
+      status: {
+        players: {
+          counts: players.length,
+          dead: [],
+          effects: {
+            buff: {
+              stat: {str: 1, agi: 1, def: 1},
+              counts: 0
+            },
+            debuff: {
+              stat: {str: 1, agi: 1, def: 1},
+              counts: 0
+            }
+          }
+        },
+        mobs: {
+          counts: mobs.length,
+          dead: [],
+          effects: {
+            buff: {
+              stat: {str: 1, agi: 1, def: 1},
+              counts: 0
+            },
+            debuff: {
+              stat: {str: 1, agi: 1, def: 1},
+              counts: 0
+            }
+          }
+        }
+      }
+    }
+  };
+};
+
+Hunt.prototype.start = function(id) {
+  let hunt = this.cache[id]
+  if(hunt.info.isStarted == false)
+    hunt.info.isStarted = true;
+  else
+    return false;
+  return true;
+};
+
+Hunt.prototype.isOver = function(id) {
+  let hunt = this.cache[id].info
+  let isDead = {
+    players: hunt.status.players.counts == hunt.status.players.dead.length,
+    mobs: hunt.status.mobs.counts == hunt.status.mobs.dead.length
+  }
+  
+  return isDead.players && isDead.mobs ? 
+    "draw" : isDead.players ? 
+    "defeat" : isDead.mobs ? 
+    "win" : 
+    "not_over";
+};
+
+Hunt.prototype.nextTurn = function(id, target) {
+  let hunt = this.cache[id].info
+  target = target.toLowerCase();
+  switch(target) {
+    case "players":
+      if(hunt.turn.player.index + 1 >= hunt.status.players.counts) {
+        hunt.turn.player.index = 0;
+        hunt.turn.player.isOver = true;
+        hunt.turn.mob.isOver = false;
+      } else {
+        hunt.turn.player.index++;
+      }
+      break;
+      
+    case "mobs":
+      if(hunt.turn.mob.index + 1 >= hunt.status.mobs.counts) {
+        hunt.turn.mob.index = 0;
+        hunt.turn.player.isOver = false;
+        hunt.turn.mob.isOver = true;
+        hunt.turn.phase++;
+        
+        /**몹 관리*/
+        this.cache[id].mobs.filter(v => v.status.dotDamage.phases > 0 || v.status.dotHeal.phases > 0)
+        .forEach(v => {
+          /**도트대미지*/
+          if(v.status.dotDamage.phases) {
+            v.status.dotDamage.phases--;
+            if(v.status.dotDamage.damage >= v.stat.hp)
+              v.stat.hp = 0;
+            else
+              v.stat.hp -= v.status.dotDamage.damage;
+          }
+          
+          /**도트힐*/
+          if(v.status.dotHeal.phases) {
+            v.status.dotHeal.phases--;
+            if(v.status.dotHeal.heal >= v.stat.hp)
+              v.stat.hp = v.stat.max_hp;
+            else
+              v.stat.hp += v.status.dotHeal.heal;
+          }
+        });
+        
+        /**플레이어 관리*/
+        this.cache[id].players.filter(v => v.status.dotDamage.phases > 0 || v.status.dotHeal.phases > 0)
+        .forEach(v => {
+          /**도트대미지*/
+          if(v.status.dotDamage.phases) {
+            v.status.dotDamage.phases--;
+            if(v.status.dotDamage.damage >= v.stat.hp)
+              v.stat.hp = 0;
+            else
+              v.stat.hp -= v.status.dotDamage.damage;
+          }
+          /**도트힐*/
+          if(v.status.dotHeal.phases) {
+            v.status.dotHeal.phases--;
+            if(v.status.dotHeal.heal >= v.stat.hp)
+              v.stat.hp = v.stat.max_hp;
+            else
+              v.stat.hp += v.status.dotHeal.heal;
+          }
+        });
+        
+        /**디버프 관리*/
+        if(hunt.status.mobs.effects.debuff.counts >= 0) {
+            hunt.status.mobs.effects.debuff.counts--;
+        } else {
+            hunt.status.mobs.effects.debuff.stat = {str: 1, agi: 1, def: 1};
+        }
+        
+        if(hunt.status.players.effects.debuff.counts >= 0) {
+            hunt.status.players.effects.debuff.counts--;
+        } else {
+            hunt.status.players.effects.debuff.stat = {str: 1, agi: 1, def: 1};
+        }
+        
+        /**버프 관리*/
+        if(hunt.status.mobs.effects.buff.counts >= 0) {
+            hunt.status.mobs.effects.buff.counts--;
+        } else {
+            hunt.status.mobs.effects.buff.stat = {str: 1, agi: 1, def: 1};
+        }
+        
+        if(hunt.status.players.effects.buff.counts >= 0) {
+            hunt.status.players.effects.buff.counts--;
+        } else {
+            hunt.status.players.effects.buff.stat = {str: 1, agi: 1, def: 1};
+        }
+      } else {
+        hunt.turn.mob.index++;
+      }
+      break;
+  }
+};
+
+Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
+  let hunt = this.cache[user.hunt.id];
+  let target = choice == "mobs" ? hunt.mobs[targetIndex] : hunt.players[targetIndex];
+
+  switch(skill.type) {
+    case "dot_damage":
+      if(skill.damage >= target.stat.hp) {
+        hunt.info.status[choice].dead.push(target);
+        hunt[choice].splice(targetIndex, 1);
+        return "defeat";
+      }
+      target.status.dotDamage = {damage: skill.damage, phases: skill.phases - 1};
+      target.stat.hp -= skill.damage;
+      break;
+    case "dot_heal":
+      target.status.dotHeal = {heal: skill.heal, phases: skill.phases - 1};
+      target.stat.hp += skill.heal;
+      break;
+    case "heal":
+      target.stat.hp += skill.heal;
+      break;
+    case "stun":
+      target.status.stun = skill.stun;
+      target.status.stun--;
+      break;
+    case "stun_damage":
+      if(skill.damage >= target.stat.hp) {
+        hunt.info.status[choice].dead.push(target);
+        hunt[choice].splice(targetIndex, 1);
+        return "defeat";
+      }
+      target.status.stun = skill.stun;
+      target.stat.hp -= skill.damage;
+      break;
+    case "blood":
+      if(skill.damage >= target.stat.hp) {
+        hunt.info.status[choice].dead.push(target);
+        hunt[choice].splice(targetIndex, 1);
+        player.stat.hp += skill.heal;
+        return "defeat";
+      }
+      target.stat.hp -= skill.damage;
+      user.stat.hp += skill.heal;
+      break;
+    case "dot_blood":
+      if(skill.damage >= target.stat.hp) {
+        hunt.info.status[choice].dead.push(target);
+        hunt[choice].splice(targetIndex, 1);
+        user.stat.hp += skill.heal;
+        return "defeat";
+      }
+      target.status.dotDamage = {damage: skill.damage, phases: skill.phases - 1};
+      target.stat.hp -= skill.damage;
+      player.status.dotHeal = {heal: skill.self_heal, phases: skill.phases - 1};
+      player.stat.hp += skill.heal;
+      break;
+    case "damage":
+      if(skill.damage >= target.stat.hp) {
+        hunt.info.status[choice].dead.push(target);
+        hunt[choice].splice(targetIndex, 1);
+        return "defeat";
+      }
+      target.stat.hp -= skill.damage;
+      break;
+    case "buff":
+      hunt.info.status[choice].effects.buff.stat = skill.buff;
+      hunt.info.status[choice].effects.buff.counts = skill.phases;
+      break;
+    case "debuff":
+      hunt.info.status[choice].effects.debuff.stat = skill.debuff;
+      hunt.info.status[choice].effects.debuff.counts = skill.phases;
+      break;
+    case "buff_debuff":
+      hunt.info.status[choice].effects.buff.stat = skill.buff;
+      hunt.info.status[choice].effects.buff.counts = skill.phases;
+      
+      hunt.info.status[choice].effects.debuff.stat = skill.debuff;
+      hunt.info.status[choice].effects.debuff.counts = skill.phases;
+      break;
+  }
+};
+
+Hunt.prototype.getList = function(id, user, skill, type) {
+  let hunt = this.cache[id];
+  if(type == "mob") return hunt.mobs.map((v, i) => {
+    if(Math.abs(v.location.in.x - user.location.in.x) <= skill.distance.x 
+    && Math.abs(v.location.in.y - user.location.in.y) <= skill.distance.y)
+      return (i + 1) + ". " + v.name + "(HP " + v.stat.hp + ") " + ": O";
+    else
+      return (i + 1) + ". " + v.name + "(HP " + v.stat.hp + ") " + ": X";
+  });
+  if(type == "player") return hunt.players.map((v, i) => {
+    if(Math.abs(v.location.in.x - user.location.in.x) <= skill.distance.x 
+    && Math.abs(v.location.in.y - user.location.in.y) <= skill.distance.y)
+      return (i + 1) + ". " + v.name + "(HP " + v.hp + ") " + ": O";
+    else
+      return (i + 1) + ". " + v.name + "(HP " + v.hp + ") " + ": X";
+  });
+};
+
+function Skill(data) {
+  this.types = ["dot_damage", "dot_heal", "heal", "stun", "stun_damage", "blood", "dot_blood", "damage", "buff", "debuff", "debuff_buff"];
+  this.cache = data.cache || {};
+}
+
+Skill.prototype.add = function(type, name, description, requirement, stat, distance, target) {
+  if(!this.types.includes(type)) return "invalid type";
+  
+  let skill;
+  
+  switch(type) {
+    case this.types[0]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        damage: stat.damage,
+        phases: stat.phases,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[1]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        heal: stat.heal,
+        phases: stat.phases,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[2]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        heal: stat.heal,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[3]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        stun: stat.stun,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[4]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        damage: stat.damage,
+        stun: stat.stun,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[5]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        damage: stat.damage,
+        heal: stat.heal,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[6]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        damage: stat.damage,
+        heal: stat.heal,
+        phases: stat.phases,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[7]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        damage: stat.damage,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[8]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        buff: stat.buff,
+        phases: stat.phases,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[9]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        debuff: stat.debuff,
+        phases: stat.phases,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+    case this.types[10]:
+      skill = {
+        type: type,
+        name: name,
+        description: description,
+        requirement: {
+          stamina: requirement.stamina,
+          lv: requirement.lv,
+          item: requirement.item
+        },
+        buff: stat.buff,
+        debuff: stat.debuff,
+        phases: stat.phases,
+        distance: {x: distance.x, y: distance.y},
+        target: target
+      };
+      break;
+  }
+  this.cache[name] = skill;
+};
+
+Skill.prototype.delete = function (name) {
+  delete this.cache[name];
+};
+
+function updateFile(fileName, data) {
+  if(["quest", "map", "npc", "mob", "hunt", "pvp", "item", "store", "skill"].includes(fileName))
+    fileName = "/data/"+ fileName;
+  else
+    fileName = "/players/" + fileName;
+  FileStream.write(getPath(fileName), JSON.stringify(data));
+}
+
+function getFile(fileName) {
+  if(["quest", "map", "npc", "mob", "hunt", "pvp", "item", "store", "skill"].includes(fileName))
+    fileName = "/data/"+ fileName;
+  else
+    fileName = "/players/" + fileName;
+  if(!new File(getPath(fileName)).exists()) return false;
+  return JSON.parse(FileStream.read(getPath(fileName)));
+}
+
+function getPath(fileName) {
+  return localPath + fileName + ".json";
+}
+
+
+function font(text, font_name) {
+  if(!font_name || !["basic", "stroke", "bold", "italic", "outline", "whole_word"].includes(font_name.toLowerCase())) return "FONTS\n\nBasic\n????\nS?t?r?o?k?e?\n???????\n??????\nＷｈｏｌｅ _ ｗｏｒｄ";
+
+  const basic = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', " "];
+  const stroke = ["A?", "B?", "C?", "D?", "E?", "F?", "G?", "H?", "I?", "J?", "K?", "L?", "M?", "N?", "O?", "P?", "Q?", "R?", "S?", "T?", "U?", "V?", "W?", "X?", "Y?", "Z?", "a?", "b?", "c?", "d?", "e?", "f?", "g?", "h?", "i?", "j?", "k?", "l?", "m?", "n?", "o?", "p?", "q?", "r?", "s?", "t?", "u?", "v?", "w?", "x?", "y?", "z?", "0?", "1?", "2?", "3?", "4?", "5?", "6?", "7?", "8?", "9?", " ?"];
+  const bold = ["?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", " "];
+  const italic = ["?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", " "];
+  const outline = ["?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", " "];
+  const whole_word = ["Ａ", "Ｂ", "Ｃ", "Ｄ", "Ｅ", "Ｆ", "Ｇ", "Ｈ", "Ｉ", "Ｊ", "Ｋ", "Ｌ", "Ｍ", "Ｎ", "Ｏ", "Ｐ", "Ｑ", "Ｒ", "Ｓ", "Ｔ", "Ｕ", "Ｖ", "Ｗ", "Ｘ", "Ｙ", "Ｚ", "ａ", "ｂ", "ｃ", "ｄ", "ｅ", "ｆ", "ｇ", "ｈ", "ｉ", "ｊ", "ｋ", "ｌ", "ｍ", "ｎ", "ｏ", "ｐ", "ｑ", "ｒ", "ｓ", "ｔ", "ｕ", "ｖ", "ｗ", "ｘ", "ｙ", "ｚ", "０", "１", "２", "３", "４", "５", "６", "７", "８", "９", " "];
+
+  return text.split("").map(v => basic.indexOf(v) !== -1 ? v = eval(font_name.toLowerCase())[basic.indexOf(v)] : v).join('');
+}
+
+function generateMobs(counts, mobs = []) {
+  return new Array(Math.random() * counts + mobs.length | 0)
+    .fill(null)
+    .map(v => {
+      let entity = Object.assign({}, mobs[Math.random() * (mobs.length - 1) | 0]);
+      return JSON.parse(JSON.stringify(entity));
+    });
+}
+
+
+function setRandomPos(mobs) {
+  let x = [10, 20, 30];
+  let y = [10, 20, 30];
+    
+  return mobs.map((v, i) => {
+    v.location.in.x = x[Math.floor(Math.random() * x.length)];
+    v.location.in.y = y[Math.floor(Math.random() * y.length)];
+    v.name = v.name;
+    return v;
+  });
+}
+
+
+function questForm(quest) {
+  if(!quest) return `┏ ${("None Quest")}
+┣━━━━━━━━━━━━━━
+┃ ${("You don't have a quest.")}
+┗━━━━━━━━━━━━━━`;
+  if(quest.type == "battle")
+  return `┏ ${(quest.name)}
+┣━━━━━━━━━━━━━━
+┃ ${quest.description}
+┃
+┣ ${"Requirement"}
+┃
+┃ Level: ${quest.requirement.lv}
+┃ ${"Kill"} ${(String(quest.requirement.targetMob.counts))} ${(quest.requirement.targetMob.name)}
+┃ (${quest.requirement.mobCounts} / ${quest.requirement.targetMob.counts})
+┃
+┣ ${("Rewards")}
+┃
+┃ ${("Items")}: ${quest.rewards.items.join(", ")}
+┃ ${("Exp")}: ${quest.rewards.exp}
+┗━━━━━━━━━━━━━━`;
+Log.i(JSON.stringify(quest), null, 4);
+return `┏ ${(quest.name)}
+┣━━━━━━━━━━━━━━
+┃ ${quest.description}
+┃
+┣ ${"Requirement"}
+┃
+┃ Level: ${quest.requirement.lv}
+┃ ${"Items"} ${(String(quest.requirement.targetItem.counts))} ${(quest.requirement.targetItem.name)}
+┃ (${quest.requirement.itemCounts} / ${quest.requirement.targetItem.counts})
+┃
+┣ ${("Rewards")}
+┃
+┃ ${("Items")}: ${quest.rewards.items.join(", ")}
+┃ ${("Exp")}: ${quest.rewards.exp}
+┗━━━━━━━━━━━━━━`;
+}
+
+bot.addListener(Event.MESSAGE, onMessage);
