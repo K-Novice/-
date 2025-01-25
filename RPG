@@ -33,7 +33,7 @@ const Lw = "\u200b".repeat(500);
 
 function onMessage(msg) {
   try {
-  if(!msg.isMultiChat || !msg.content.startsWith(prefix)) return;
+  if(!msg.content.startsWith(prefix)) return;
   
   if(!msg.room.includes("RPG")) return;
   /*cmd = msg.content.replace(prefix, "");
