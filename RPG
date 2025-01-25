@@ -1,3 +1,5 @@
+Device.acquireWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, '');
+
 const bot = BotManager.getCurrentBot();
 
 importClass(java.lang.System);
