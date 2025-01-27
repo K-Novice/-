@@ -334,7 +334,7 @@ function Player(userHash, name, data) {
     dotHeal: {}
   };
   this.inventory = data.inventory || [];
-  this.skills = data.skills || [];
+  this.skills = data.skills || ["평타"];
   this.choice = data.choice || "mob";
   this.talking = data.talking || false;
   this.npc = data.npc || null;
