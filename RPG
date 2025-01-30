@@ -100,7 +100,7 @@ function handleMessage(msg) {
       let mobs = generateMobs(1, nearMobs);
       //mobs = setRandomPos(mobs);
       hunt.add([player], mobs);
-      reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
+      reply(huntForm(player));
       break;
     
     
@@ -130,21 +130,19 @@ function handleMessage(msg) {
       }
       
       if(data.type == "skill") {
-        hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillName]);
+        reply(hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillName]));
         hunt.nextTurn(player.hunt.id, "players");
         //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
-        reply(huntForm(player));
-        
         while(hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
           
-          hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
+          reply(hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]));
           hunt.nextTurn(player.hunt.id, "mobs");
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
-          reply(huntForm(player));
         }
       }
+      reply(huntForm(player));
       break;
   }
   updateFile(msg.author.hash, player);
@@ -334,7 +332,7 @@ function Player(userHash, name, data) {
     dotHeal: {}
   };
   this.inventory = data.inventory || [];
-  this.skills = data.skills || ["평타"];
+  this.skills = data.skills || [];
   this.choice = data.choice || "mob";
   this.talking = data.talking || false;
   this.npc = data.npc || null;
@@ -915,6 +913,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       hunt.info.status[choice].effects.debuff.counts = skill.phases;
       break;
   }
+  return target.name + ": " + target.stat.hp;
 };
 
 Hunt.prototype.getList = function(id, user, skill, type) {
