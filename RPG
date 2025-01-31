@@ -137,12 +137,29 @@ function handleMessage(msg) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
           
-          reply(hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]));
+          let useSkill = hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
+          let isOver = hunt.isOver(player.hunt.id)
+          
+          if(isOver == "defeat") {
+            reply("[☠️Defeated☠️]");
+            break;
+          }
+          
+          if(isOver == "win") {
+            reply("[👑Win👑]");
+            break;
+          }
+          
+          if(isOver == "draw") {
+            reply("[⚔️Draw⚔️]");
+            break;
+          }
+          
           hunt.nextTurn(player.hunt.id, "mobs");
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         }
       }
-      reply(huntForm(player));
+      reply("[전투 로그 상세보기]" + Lw + huntForm(player));
       break;
   }
   updateFile(msg.author.hash, player);
