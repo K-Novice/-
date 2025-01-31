@@ -140,24 +140,23 @@ function handleMessage(msg) {
           let useSkill = hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
           let isOver = hunt.isOver(player.hunt.id)
           
-          if(isOver == "defeat") {
-            reply("[☠️Defeated☠️]");
-            break;
+          switch(isOver) {
+            case "defeat":
+              reply("[☠️Defeated☠️]");
+              break;
+          
+            case "win":
+              reply("[👑Win👑]");
+              break;
+          
+            case "draw":
+              reply("[⚔️Draw⚔️]");
+              break;
+            
+            default:
+              reply(useSkill);
+              hunt.nextTurn(player.hunt.id, "mobs");
           }
-          
-          if(isOver == "win") {
-            reply("[👑Win👑]");
-            break;
-          }
-          
-          if(isOver == "draw") {
-            reply("[⚔️Draw⚔️]");
-            break;
-          }
-          
-          reply(useSkill);
-          
-          hunt.nextTurn(player.hunt.id, "mobs");
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         }
       }
