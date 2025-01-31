@@ -137,7 +137,7 @@ function handleMessage(msg) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
           
-          let useSkill = hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
+          let useSkill = hunt.useSkill(entity, "players", 0, skill.cache[entity.skills[Math.random() * entity.skills.length | 0]]);
           let isOver = hunt.isOver(player.hunt.id)
           
           switch(isOver) {
