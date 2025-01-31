@@ -155,6 +155,8 @@ function handleMessage(msg) {
             break;
           }
           
+          reply(useSkill);
+          
           hunt.nextTurn(player.hunt.id, "mobs");
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         }
