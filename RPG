@@ -97,7 +97,7 @@ function handleMessage(msg) {
     case commands[5]://사냥
       if(msg.content.trim() != cmd) return;
       let nearMobs = player.getNearMobs();
-      let mobs = generateMobs(1, nearMobs);
+      let mobs = generateMobs(3, nearMobs);
       //mobs = setRandomPos(mobs);
       hunt.add([player], mobs);
       reply(huntForm(player));
@@ -130,27 +130,33 @@ function handleMessage(msg) {
       }
       
       if(data.type == "skill") {
-        reply(hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillName]));
+        reply(hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillId]));
         hunt.nextTurn(player.hunt.id, "players");
         //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         while(hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
           
-          let useSkill = hunt.useSkill(entity, "players", 0, skill.cache[entity.skills[Math.random() * entity.skills.length | 0]]);
+          let useSkill = hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
           let isOver = hunt.isOver(player.hunt.id)
           
           switch(isOver) {
             case "defeat":
               reply("[☠️Defeated☠️]");
+              delete hunt.cache[player.hunt.id];
+              player.hunt.id = null;
               break;
           
             case "win":
               reply("[👑Win👑]");
+              delete hunt.cache[player.hunt.id];
+              player.hunt.id = null;
               break;
           
             case "draw":
               reply("[⚔️Draw⚔️]");
+              delete hunt.cache[player.hunt.id];
+              player.hunt.id = null;
               break;
             
             default:
@@ -167,37 +173,24 @@ function handleMessage(msg) {
 }
 
 function isValid(player, content, type) {
+  let {skillIndex, mobIndex} = content.trim().split(" ");
+  if(isNaN(skillIndex) || (isNaN(mobIndex) && mobIndex.trim() == "")) return "형식에 맞지 않습니다.\n" + PREFIX + commands[7] + " (스킬 번호) (타겟 번호) 형식으로 입력해주세요.";
+  let skillId = player.loadAllSkills()[parseInt(skillIndex)];
   switch(type) {
     case "skill":
-      if(player.skills.some(v => content.includes(v))) {
-        
-        let skillName = player.skills.filter(v => content.includes(v));
-        skillName = skillName.find(v => {
-          if(!isNaN(content.replace(v, "").trim()))
-          return true;
-        });
-                
-        if(skillName == null) return false;
-        
-        let mobIndex = content
-          .replace(skillName, "")
-          .trim();
-          
-        if(mobIndex == "")
+      if(mobIndex == "")
           return {
-            skillName: skillName,
+            skillId: skillId,
             type: "list"
           };
           
         mobIndex = parseInt(mobIndex);
         
         return {
-          skillName: skillName,
+          skillId: skillId,
           type: "skill",
           index: parseInt(mobIndex) - 1
         };
-      }
-      break;
   }
 }
 
@@ -336,7 +329,7 @@ function Player(userHash, name, data) {
   this.exp = data.exp || 0;
   this.hunger = data.hunger || 100;
   this.stat = data.stat || {
-    hp: 50,
+    hp: 500,
     max_hp: 50,
     agi: 30,
     str: 30,
@@ -349,8 +342,24 @@ function Player(userHash, name, data) {
     dotDamage: {},
     dotHeal: {}
   };
+  this.armor = data.armor || {
+    head: null,
+    eye: null,
+    body: null,
+    back: null,
+    arm: {
+      right: null,
+      left: null
+    },
+    hands: {
+      right: null,
+      left: null
+    },
+    pants: null
+  };
+  
   this.inventory = data.inventory || [];
-  this.skills = data.skills || [];
+  this.skills = data.skills || ["평타", "이그리스", "카운터"];
   this.choice = data.choice || "mob";
   this.talking = data.talking || false;
   this.npc = data.npc || null;
@@ -454,14 +463,14 @@ Player.prototype.deleteQuest = function() {
   delete this.quest;
 };
 
-Player.prototype.giveSkill = function (name) {
-  if(this.skills[name]) return "You already have this skill \"" + this.quest + "\".";
-  if(!skill.cache[name]) return `Skill "${name}" is not found`;
-  if(!skill.cache[name].requirement.lv >= this.lv || skill.cache[name].requirement.item.filter(v => player.inventory.find(i => i == v)).length != 0) return "Can not give this skill \"" + name + "\"\n[Requirement]\nLv: " + skill.cache[name].requirement.lv + "\nItems: " + skill.cache[name].requirement.item.join(", ");
-    this.skills.push([name]);
+Player.prototype.giveSkill = function (id) {
+  if(this.skills[id]) return "You already have this skill \"" + this.quest + "\".";
+  if(!skill.cache[id]) return `Skill "${id}" is not found`;
+  if(!skill.cache[id].requirement.lv >= this.lv || skill.cache[id].requirement.item.filter(v => player.inventory.find(i => i == v)).length != 0) return "Can not give this skill \"" + id + "\"\n[Requirement]\nLv: " + skill.cache[id].requirement.lv + "\nItems: " + skill.cache[id].requirement.item.join(", ");
+    this.skills.push(id);
 };
 
-Player.prototype.deleteQuest = function(name) {
+Player.prototype.deleteSkill = function(name) {
   delete this.skills[name];
 };
 
@@ -477,6 +486,62 @@ Player.prototype.getNearMobs = function() {
   return Object.values(mob.kind)
     .filter(entity => entity.connectedLocation
       .includes(mapName));
+};
+
+Player.prototype.addExp = function(exp) {
+  while(true) {
+    if(this.exp + exp >= this.exp * 100) {
+      this.exp = this.exp + exp - this.exp * 100;
+      user.lv++;
+    }
+    else if(this.exp + exp < this.exp * 100) {
+      this.exp += exp;
+      break;
+    }
+  }
+};
+
+Player.prototype.addItems = function(items) {
+  items.forEach(v => {
+    if(this.inventory.find(item => item.id == v.id)) {
+      this.inventody.find(item => item.id == v.id).counts += v.counts;
+    } else {
+      this.inventory.push({
+        id: v.id,
+        counts: v.counts
+      });
+    }
+  });
+};
+
+Player.prototype.loadAllSkills = function() {
+  let itemSkill = [];
+      let keys = Object.keys(this.armor);
+      for(let key of keys) {
+        if(typeof this.armor[key] == "object") {
+          if(this.armor[key].left) itemSkill.push(this.armor[key].left);
+          if(this.armor[key].right) itemSkill.push(this.armor[key].right);
+        } else {
+          itemSkill.push(this.armor[key]);
+        }
+      }
+  let skillIdList = Array.concat(this.skills, itemSkill);
+  return skillIdList;
+}
+
+function Item(data) {
+  this.list = data.list || {};
+}
+
+Item.prototype.add = function(id, name, type, skills, buff, debuff) {
+  this.list[id] = {
+    id: id,
+    name: name,
+    type: type,
+    skills: skills,
+    buff: buff,
+    debuff: debuff
+  };
 };
 
 function Mob(data) {
@@ -571,6 +636,36 @@ Quest.prototype.add = function (type, name, description, lv, targetName, counts,
   }
 };
 
+Quest.prototype.clear = function(user) {
+  let rewards = user.quest.rewards;
+  user.addExp(rewards.exp);
+  user.addItems(rewards.items);
+  user.quest = null;
+};
+
+Quest.prototype.update = function(user) {
+  if(!user.quest) return 0;
+  let questType = user.quest.type;
+  let requirement = user.quest.requirement;
+
+  switch(questType) {
+    case "battle":
+      let data = hunt.cache[user.hunt.id];
+      let questMobs = hunt.status.mobs.dead.filter(v => 
+        v.mob.killers.includes(user.id) &&
+        v.name == requirement.targetMob.name);
+      if(questMob.length != 0) {
+        requirement.mobCounts += questMob.length;
+        if(requirement.mobCounts >= requirement.targetMob.counts)
+          this.clear(user);
+      }
+      
+    case "explore":
+      let items = user.inventory.find(v => v.requirement.targetItem.name)
+      if(!items || items.counts < requirement.targetItem.counts) return 0;
+      this.clear(user);
+  }
+};
 
 function Npc(data) {
     this.data = data.data || {};
@@ -1182,7 +1277,7 @@ function font(text, font_name) {
 }
 
 function generateMobs(counts, mobs = []) {
-  return new Array(Math.random() * counts + mobs.length | 0)
+  return new Array((Math.random() * counts + mobs.length | 0) + 1)
     .fill(null)
     .map(v => {
       let entity = Object.assign({}, mobs[Math.random() * (mobs.length - 1) | 0]);
