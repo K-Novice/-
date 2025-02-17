@@ -7,7 +7,7 @@ importClass(java.util.Random);
 importClass(java.io.File);
 
 const prefix = "";
-const localPath = "/sdcard/rpg/";
+const localPath = "/sdcard/피엔드/";
 
 let commands = [
   "내정보",
@@ -599,7 +599,7 @@ function Quest(data) {
   this.quest = data.quest || {};
 }
 
-Quest.prototype.add = function (type, name, description, lv, targetName, counts, items, exp) {
+Quest.prototype.add = function (type, name, description, lv, targetList, items, exp) {
   this.quest[name] = {
     name: name,
     description: description,
@@ -608,11 +608,7 @@ Quest.prototype.add = function (type, name, description, lv, targetName, counts,
   if(type == "battle") {
     this.quest[name].requirement = {
       lv: lv,
-      targetMob: {
-        name: targetName,
-        counts: counts
-      },
-      mobCounts: 0
+      targetList: targetList
     };
     this.quest[name].rewards = {
       items: items,
@@ -653,10 +649,10 @@ Quest.prototype.update = function(user) {
       let data = hunt.cache[user.hunt.id];
       let questMobs = hunt.status.mobs.dead.filter(v => 
         v.mob.killers.includes(user.id) &&
-        v.name == requirement.targetMob.name);
+        Object.keys(requirement).find(name => requirement[name].name == v.name));
       if(questMob.length != 0) {
-        requirement.mobCounts += questMob.length;
-        if(requirement.mobCounts >= requirement.targetMob.counts)
+        requirement.nowCounts += questMob.length;
+        if(requirement.filter(v => v.counts < v.nowCounts).length == 0)
           this.clear(user);
       }
       
