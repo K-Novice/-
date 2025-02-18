@@ -619,11 +619,7 @@ Quest.prototype.add = function (type, name, description, lv, targetList, items, 
   if(type == "explore") {
     this.quest[name].requirement = {
       lv: lv,
-      targetItem: {
-        name: targetName,
-        counts: counts
-      },
-      itemCounts: 0
+      targetList: targetList
     };
     this.quest[name].rewards = {
       items: items,
@@ -647,19 +643,24 @@ Quest.prototype.update = function(user) {
   switch(questType) {
     case "battle":
       let data = hunt.cache[user.hunt.id];
-      let questMobs = hunt.status.mobs.dead.filter(v => 
+      let questMobs = data.status.mobs.dead.filter(v => 
         v.mob.killers.includes(user.id) &&
-        Object.keys(requirement).find(name => requirement[name].name == v.name));
+        requirement.targetList.find(a => a.name == v.name));
       if(questMob.length != 0) {
-        requirement.nowCounts += questMob.length;
-        if(requirement.filter(v => v.counts < v.nowCounts).length == 0)
+        requirement.targetList.forEach(v => {
+            v.nowCounts += questMob.filter(a => a.name == v.name).length;
+          });
+        if(requirement.targetList.filter(v => v.counts < v.nowCounts).length == 0)
           this.clear(user);
       }
       
     case "explore":
-      let items = user.inventory.find(v => v.requirement.targetItem.name)
-      if(!items || items.counts < requirement.targetItem.counts) return 0;
-      this.clear(user);
+      let items = user.inventory.filter(v => {
+        if(requirement.targetList.find(a => a.id == v.id && a.counts >= v.counts))
+          return v;
+      })
+      if(items.length >= requirement.targetList.length)
+        this.clear(user);
   }
 };
 
