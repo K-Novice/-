@@ -1049,7 +1049,7 @@ function Skill(data) {
   this.cache = data.cache || {};
 }
 
-Skill.prototype.add = function(type, name, description, requirement, stat, distance, target) {
+Skill.prototype.add = function(type, id, name, description, requirement, stat, distance, target) {
   if(!this.types.includes(type)) return "invalid type";
   
   let skill;
@@ -1058,6 +1058,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[0]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1074,6 +1075,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[1]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1090,6 +1092,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[2]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1105,6 +1108,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[3]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1120,6 +1124,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[4]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1136,6 +1141,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[5]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1152,6 +1158,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[6]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1169,6 +1176,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[7]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1184,6 +1192,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[8]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1200,6 +1209,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[9]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1216,6 +1226,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
     case this.types[10]:
       skill = {
         type: type,
+        id: id,
         name: name,
         description: description,
         requirement: {
@@ -1231,7 +1242,7 @@ Skill.prototype.add = function(type, name, description, requirement, stat, dista
       };
       break;
   }
-  this.cache[name] = skill;
+  this.cache[id] = skill;
 };
 
 Skill.prototype.delete = function (name) {
