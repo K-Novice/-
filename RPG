@@ -53,10 +53,10 @@ function handleMessage(msg) {
   const reply = (message) => {
    msg.reply(message);
   };
-  
+
   player = new Player(msg.author.hash, msg.author.name, getFile(msg.author.hash)) || new Player(msg.author.hash, msg.author.name);
   
-  if(msg.content.startsWith(prefix + "ev")) {
+  if(msg.content.startsWith(prefix + "ev") && msg.author.hash == "afda33d559a02f6f1b1f9847d4d29a9cf06222d5e70f1e5315293f51df3fe5e5") {
     reply(evaluate(msg.content.slice(2)));
   }
   
@@ -117,7 +117,7 @@ function handleMessage(msg) {
     
     
     case commands[7]://공격
-      let data = isValid(player, msg.content.replace(cmd, ""), "skill")
+      let data = isValid(player, msg.content.replace(cmd, "").trim(), "skill")
       
       if(!data) {
         reply(false);
@@ -125,20 +125,49 @@ function handleMessage(msg) {
       }
       
       if(data.type == "list") {
-        reply(hunt.getList(player.hunt.id, player, skill.cache[data.skillName], player.choice));
+        reply(hunt.getList(player.hunt.id, player, skill.cache[data.skillId], player.choice));
         break;
       }
       
       if(data.type == "skill") {
         reply(hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillId]));
         hunt.nextTurn(player.hunt.id, "players");
+        
+      quest.update(player);
+      
+        let isOver = hunt.isOver(player.hunt.id);
+          
+          switch(isOver) {
+            case "defeat":
+              reply("[☠️Defeated☠️]");
+              delete hunt.cache[player.hunt.id];
+              player.hunt.id = null;
+              return;
+              break;
+          
+            case "win":
+              reply("[👑Win👑]");
+              delete hunt.cache[player.hunt.id];
+              player.hunt.id = null;
+              return;
+              break;
+          
+            case "draw":
+              reply("[⚔️Draw⚔️]");
+              delete hunt.cache[player.hunt.id];
+              player.hunt.id = null;
+              return;
+              break;
+            }
         //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         while(hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
+          let useSkill;
           
-          let useSkill = hunt.useSkill(entity, "players", 0, skill.cache["이그리스"]);
-          let isOver = hunt.isOver(player.hunt.id)
+          if(entity)
+            useSkill = hunt.useSkill(entity, "players", 0, skill.cache["basic_hit"]);
+          isOver = hunt.isOver(player.hunt.id);
           
           switch(isOver) {
             case "defeat":
@@ -160,7 +189,7 @@ function handleMessage(msg) {
               break;
             
             default:
-              reply(useSkill);
+              if(useSkill) reply(useSkill);
               hunt.nextTurn(player.hunt.id, "mobs");
           }
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
@@ -173,9 +202,11 @@ function handleMessage(msg) {
 }
 
 function isValid(player, content, type) {
-  let {skillIndex, mobIndex} = content.trim().split(" ");
-  if(isNaN(skillIndex) || (isNaN(mobIndex) && mobIndex.trim() == "")) return "형식에 맞지 않습니다.\n" + PREFIX + commands[7] + " (스킬 번호) (타겟 번호) 형식으로 입력해주세요.";
-  let skillId = player.loadAllSkills()[parseInt(skillIndex)];
+  let [skillIndex, mobIndex] = content.trim().split(" ");
+  Log.i([skillIndex, mobIndex, content]);
+  if(isNaN(skillIndex) && isNaN(mobIndex) && mobIndex.trim() != "") return "형식에 맞지 않습니다.\n" + prefix + commands[7] + " (스킬 번호) (타겟 번호) 형식으로 입력해주세요.";
+  let skillId = player.loadAllSkills()[parseInt(skillIndex) - 1];
+  Log.i([skillIndex, mobIndex, skillId]);
   switch(type) {
     case "skill":
       if(mobIndex == "")
@@ -359,7 +390,7 @@ function Player(userHash, name, data) {
   };
   
   this.inventory = data.inventory || [];
-  this.skills = data.skills || ["평타", "이그리스", "카운터"];
+  this.skills = data.skills || ["basic_hit", "scream", "bite", "dash"];
   this.choice = data.choice || "mob";
   this.talking = data.talking || false;
   this.npc = data.npc || null;
@@ -518,11 +549,11 @@ Player.prototype.loadAllSkills = function() {
   let itemSkill = [];
       let keys = Object.keys(this.armor);
       for(let key of keys) {
-        if(typeof this.armor[key] == "object") {
+        if(typeof this.armor[key] == "object" && this.armor[key] != null) {
           if(this.armor[key].left) itemSkill.push(this.armor[key].left);
           if(this.armor[key].right) itemSkill.push(this.armor[key].right);
         } else {
-          itemSkill.push(this.armor[key]);
+          if(this.armor[key] != null) itemSkill.push(this.armor[key]);
         }
       }
   let skillIdList = Array.concat(this.skills, itemSkill);
@@ -757,7 +788,7 @@ function moveByName(player, index, reply) {
 }
 
 function Hunt(data) {
-  this.cache = data.hunt || {};
+  this.cache = data.cache || {};
 }
 
 Hunt.prototype.add = function(players, mobs) {
@@ -836,8 +867,8 @@ Hunt.prototype.start = function(id) {
 Hunt.prototype.isOver = function(id) {
   let hunt = this.cache[id].info
   let isDead = {
-    players: hunt.status.players.counts == hunt.status.players.dead.length,
-    mobs: hunt.status.mobs.counts == hunt.status.mobs.dead.length
+    players: hunt.status.players.counts == 0,
+    mobs: hunt.status.mobs.counts == 0
   }
   
   return isDead.players && isDead.mobs ? 
@@ -912,26 +943,26 @@ Hunt.prototype.nextTurn = function(id, target) {
         });
         
         /**디버프 관리*/
-        if(hunt.status.mobs.effects.debuff.counts >= 0) {
+        if(hunt.status.mobs.effects.debuff.counts > 0) {
             hunt.status.mobs.effects.debuff.counts--;
         } else {
             hunt.status.mobs.effects.debuff.stat = {str: 1, agi: 1, def: 1};
         }
         
-        if(hunt.status.players.effects.debuff.counts >= 0) {
+        if(hunt.status.players.effects.debuff.counts > 0) {
             hunt.status.players.effects.debuff.counts--;
         } else {
             hunt.status.players.effects.debuff.stat = {str: 1, agi: 1, def: 1};
         }
         
         /**버프 관리*/
-        if(hunt.status.mobs.effects.buff.counts >= 0) {
+        if(hunt.status.mobs.effects.buff.counts > 0) {
             hunt.status.mobs.effects.buff.counts--;
         } else {
             hunt.status.mobs.effects.buff.stat = {str: 1, agi: 1, def: 1};
         }
         
-        if(hunt.status.players.effects.buff.counts >= 0) {
+        if(hunt.status.players.effects.buff.counts > 0) {
             hunt.status.players.effects.buff.counts--;
         } else {
             hunt.status.players.effects.buff.stat = {str: 1, agi: 1, def: 1};
@@ -946,13 +977,15 @@ Hunt.prototype.nextTurn = function(id, target) {
 Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
   let hunt = this.cache[user.hunt.id];
   let target = choice == "mobs" ? hunt.mobs[targetIndex] : hunt.players[targetIndex];
-
+  if(user.status.stun > 0) return 0;
   switch(skill.type) {
     case "dot_damage":
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
+        hunt.info.status[choice].counts--;
         return "defeat";
+        break;
       }
       target.status.dotDamage = {damage: skill.damage, phases: skill.phases - 1};
       target.stat.hp -= skill.damage;
@@ -966,13 +999,14 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       break;
     case "stun":
       target.status.stun = skill.stun;
-      target.status.stun--;
       break;
     case "stun_damage":
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
-        return "defeat";
+        hunt.info.status[choice].counts--;
+        return target.name + " died";
+        break;
       }
       target.status.stun = skill.stun;
       target.stat.hp -= skill.damage;
@@ -982,7 +1016,9 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
         player.stat.hp += skill.heal;
-        return "defeat";
+        hunt.info.status[choice].counts--;
+        return target.name + " died";
+        break;
       }
       target.stat.hp -= skill.damage;
       user.stat.hp += skill.heal;
@@ -992,7 +1028,9 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
         user.stat.hp += skill.heal;
-        return "defeat";
+        hunt.info.status[choice].counts--;
+        return target.name + " died";
+        break;
       }
       target.status.dotDamage = {damage: skill.damage, phases: skill.phases - 1};
       target.stat.hp -= skill.damage;
@@ -1003,7 +1041,9 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
-        return "defeat";
+        hunt.info.status[choice].counts--;
+        return target.name + " died";
+        break;
       }
       target.stat.hp -= skill.damage;
       break;
@@ -1023,7 +1063,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       hunt.info.status[choice].effects.debuff.counts = skill.phases;
       break;
   }
-  return target.name + ": " + target.stat.hp;
+  return "Skill: " + skill.name + "\n" + target.name + ": " + target.stat.hp;
 };
 
 Hunt.prototype.getList = function(id, user, skill, type) {
@@ -1285,10 +1325,10 @@ function font(text, font_name) {
 }
 
 function generateMobs(counts, mobs = []) {
-  return new Array((Math.random() * counts + mobs.length | 0) + 1)
+  return new Array(Math.random() * counts + mobs.length | 0)
     .fill(null)
     .map(v => {
-      let entity = Object.assign({}, mobs[Math.random() * (mobs.length - 1) | 0]);
+      let entity = Object.assign({}, mobs[Math.random() * mobs.length | 0]);
       return JSON.parse(JSON.stringify(entity));
     });
 }
