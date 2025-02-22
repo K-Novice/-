@@ -678,7 +678,7 @@ Quest.prototype.update = function(user) {
   switch(questType) {
     case "battle":
       let data = hunt.cache[user.hunt.id];
-      let questMobs = data.status.mobs.dead.filter(v => 
+      let questMobs = data.info.status.mobs.dead.filter(v => 
         v.mob.killers.includes(user.id) &&
         requirement.targetList.find(a => a.name == v.name));
       if(questMob.length != 0) {
