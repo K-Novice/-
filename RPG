@@ -44,7 +44,7 @@ function onMessage(msg) {
   try{
   handleMessage(msg);
   } catch(e) {
-    msg.reply(e);
+    msg.reply(e.stack + "\n\n" + e);
   }
 
   updateFile(msg.author.hash, player);
