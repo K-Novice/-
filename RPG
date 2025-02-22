@@ -359,7 +359,7 @@ GameMap.prototype.setRequirement = function(name, newLv, newItem) {
 
 function Player(userHash, name, data) {
   this.name = data.name|| name;
-  this.userHash = data.userHash || userHash;
+  this.hash = data.hash || userHash;
   this.lv = data.lv || 0;
   this.exp = data.exp || 0;
   this.hunger = data.hunger || 100;
@@ -405,6 +405,7 @@ function Player(userHash, name, data) {
     id: null,
     type: false
   };
+  this.killer = data.killer || [];
   this.location = data.location || {
   in: {
   x: 0, 
@@ -583,37 +584,54 @@ function Mob(data) {
   this.kind = data.kind || {};
 }
 
-Mob.prototype.add = function(name, description, skills, hp, agi, def, str, stamina, criticalPercent, inteligence) {
+Mob.prototype.add = function(name, description, skills, hp, agi, def, str, stamina, criticalPercent, inteligence, armor) {
   this.kind[name] = {
-  name: name, 
-  description: description, 
-  stat: {
-    hp: hp,
-    max_hp: hp,
-    agi: agi,
-    def: def,
-    str: str,
-    stamina: stamina,
-    criticalPercent: criticalPercent,
-    inteligence: inteligence
-  },
-  status: {
-    stun: 0,
-    dotDamage: {},
-    dotHeal: {}
-  },
-  hunt: {
-    id: null,
-    type: false
-  },
-  skills: skills,
-  location: {
-    in: {
-      x: 0,
-      y: 0
-    }
-  },
-  connectedLocation: []
+    name: name, 
+    description: description, 
+    stat: {
+      hp: hp,
+        max_hp: hp,
+      agi: agi,
+      def: def,
+      str: str,
+      stamina: stamina,
+      max_stamina: stamina,
+      criticalPercent: criticalPercent,
+      inteligence: inteligence
+    },
+    status: {
+      stun: 0,
+      dotDamage: {},
+      dotHeal: {}
+    },
+    hunt: {
+      id: null,
+      type: false
+    },
+    skills: skills,
+    location: {
+      in: {
+        x: 0,
+        y: 0
+      }
+    },
+    killer: [],
+    armor: armor || {
+      head: null,
+      eye: null,
+      body: null,
+      back: null,
+      arm: {
+        right: null,
+        left: null
+      },
+      hands: {
+        right: null,
+        left: null
+      },
+      pants: null
+    },
+    connectedLocation: []
   };
 };
 
@@ -679,7 +697,7 @@ Quest.prototype.update = function(user) {
     case "battle":
       let data = hunt.cache[user.hunt.id];
       let questMobs = data.info.status.mobs.dead.filter(v => 
-        v.mob.killers.includes(user.id) &&
+        v.mob.killers.includes(user.hash) &&
         requirement.targetList.find(a => a.name == v.name));
       if(questMob.length != 0) {
         requirement.targetList.forEach(v => {
@@ -984,6 +1002,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
   if(user.status.stun > 0) return 0;
   switch(skill.type) {
     case "dot_damage":
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1005,6 +1024,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       target.status.stun = skill.stun;
       break;
     case "stun_damage":
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1016,6 +1036,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       target.stat.hp -= skill.damage;
       break;
     case "blood":
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1028,6 +1049,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       user.stat.hp += skill.heal;
       break;
     case "dot_blood":
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1042,6 +1064,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       player.stat.hp += skill.heal;
       break;
     case "damage":
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1333,6 +1356,16 @@ function generateMobs(counts, mobs = []) {
     .fill(null)
     .map(v => {
       let entity = Object.assign({}, mobs[Math.random() * mobs.length | 0]);
+      let uuid;
+  
+      while(this.cache[uuid] || uuid == undefined) {
+        uuid = "xxxxxxxxxxxxxxxx"
+        .replace(/x/g, () => {
+          return ((Math.random() * 16 | 0) & 0x3)
+            .toString();
+          });
+      }
+      entity.hash = uuid;
       return JSON.parse(JSON.stringify(entity));
     });
 }
