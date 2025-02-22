@@ -41,7 +41,11 @@ function onMessage(msg) {
   /*cmd = msg.content.replace(prefix, "");
   player = new Player(msg.author.hash, msg.author.name, getFile(msg.author.hash)) || new Player(msg.author.hash, msg.author.name);
 */
+  try{
   handleMessage(msg);
+  } catch(e) {
+    msg.reply(e);
+  }
 
   updateFile(msg.author.hash, player);
   updateFile("hunt", hunt);
