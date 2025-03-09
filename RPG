@@ -161,7 +161,7 @@ function handleMessage(msg) {
               break;
             }
         //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
-        while(hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
+        while(hunt.cache[player.hunt.id] && hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
           let useSkill;
@@ -196,7 +196,7 @@ function handleMessage(msg) {
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         }
       }
-      reply("[전투 로그 상세보기]" + Lw + huntForm(player));
+      if(hunt.cache[player.hunt.id]) reply("[전투 로그 상세보기]" + Lw + huntForm(player));
       break;
   }
   updateFile(msg.author.hash, player);
@@ -206,7 +206,6 @@ function isValid(player, content, type) {
   let [skillIndex, mobIndex] = content.trim().split(" ");
   if(isNaN(skillIndex) && isNaN(mobIndex) && mobIndex.trim() != "") return "형식에 맞지 않습니다.\n" + prefix + commands[7] + " (스킬 번호) (타겟 번호) 형식으로 입력해주세요.";
   let skillId = player.loadAllSkills()[Number(skillIndex) - 1 | 0];
-  Log.i(player.loadAllSkills())
   switch(type) {
     case "skill":
       if(mobIndex == "")
@@ -521,9 +520,9 @@ Player.prototype.getNearMobs = function() {
 
 Player.prototype.addExp = function(exp) {
   while(true) {
-    if(this.exp + exp >= this.exp * 100) {
-      this.exp = this.exp + exp - this.exp * 100;
-      user.lv++;
+    if(this.exp + exp >= this.lv * 100) {
+      this.exp = this.exp + exp - this.lv * 100;
+      this.lv++;
     }
     else if(this.exp + exp < this.exp * 100) {
       this.exp += exp;
@@ -535,7 +534,7 @@ Player.prototype.addExp = function(exp) {
 Player.prototype.addItems = function(items) {
   items.forEach(v => {
     if(this.inventory.find(item => item.id == v.id)) {
-      this.inventody.find(item => item.id == v.id).counts += v.counts;
+      this.inventory.find(item => item.id == v.id).counts += v.counts;
     } else {
       this.inventory.push({
         id: v.id,
@@ -609,8 +608,8 @@ Mob.prototype.add = function(name, description, skills, hp, agi, def, str, stami
       y: 0
     }
   },
-  killers: []
-  connectedLocation: [],
+  killers: [],
+  connectedLocation: []
   };
 };
 
@@ -678,11 +677,12 @@ Quest.prototype.update = function(user) {
       let questMobs = data.info.status.mobs.dead.filter(v => 
         v.killers.includes(user.userHash) &&
         requirement.targetList.find(a => a.name == v.name));
-      if(questMob.length != 0) {
+      if(questMobs.length != 0) {
         requirement.targetList.forEach(v => {
-            v.nowCounts += questMob.filter(a => a.name == v.name).length;
+            v.nowCount += questMobs.filter(a => a.name == v.name).length;
           });
-        if(requirement.targetList.filter(v => v.counts < v.nowCounts).length == 0)
+          Log.i("list\n" + requirement.targetList.filter(v => v.counts > v.nowCount).length);
+        if(requirement.targetList.filter(v => v.counts > v.nowCount).length == 0)
           this.clear(user);
       }
       
