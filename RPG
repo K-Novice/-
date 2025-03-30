@@ -53,6 +53,7 @@ function onMessage(msg) {
 
   updateFile(msg.author.hash, player);
   updateFile("hunt", hunt);
+  updateFile("team", team);
   } catch(e) {Log.i(e.stack + "\n\n" + e, true);}
 }
 
@@ -64,7 +65,7 @@ function handleMessage(msg) {
 
   player = new Player(msg.author.hash, msg.author.name, getFile(msg.author.hash)) || new Player(msg.author.hash, msg.author.name);
   
-  if(msg.content.startsWith(prefix + "ev") && msg.author.hash == "afda33d559a02f6f1b1f9847d4d29a9cf06222d5e70f1e5315293f51df3fe5e5") {
+  if(msg.content.startsWith(prefix + "ev") && msg.author.hash != "afda33d559a02f6f1b1f9847d4d29a9cf06222d5e70f1e5315293f51df3fe5e5") {
     reply(evaluate(msg.content.slice(2)));
   }
   
@@ -107,7 +108,7 @@ function handleMessage(msg) {
       let nearMobs = player.getNearMobs();
       let mobs = generateMobs(3, nearMobs);
       //mobs = setRandomPos(mobs);
-      hunt.add(team.cache[player.teamId], mobs);
+      hunt.add(new Player().loadAllUsers().filter(v => team.cache[player.teamId].includes(player.userHash)), mobs);
       reply(huntForm(player));
       break;
     
@@ -208,18 +209,19 @@ function handleMessage(msg) {
     
     case commands[8]: // 팀생성
       if(msg.content.trim() != commands[8]) return;
-      if(player.team != null) return msg.reply("이미 팀에 속해있습니다.");
+      if(player.teamId != null) return msg.reply("이미 팀에 속해있습니다.");
       
       team.add(player);
       msg.reply("팀 생성 완료.\n팀 ID: " + player.teamId);
       break;
     
     case commands[9]: // 팀참가
-      if(msg.content.trim() != commands[8]) return msg.reply(prefix + commands[9] + " (ID) 형식으로 입력해주세요.");
-      if(player.team != null) return msg.reply("이미 팀에 속해있습니다.");
+      if(msg.content.trim() == commands[8]) return msg.reply(prefix + commands[9] + " (ID) 형식으로 입력해주세요.");
+      if(player.teamId != null) return msg.reply("이미 팀에 속해있습니다.");
       
-      team.join(player, args.join(""));
-      msg.reply("팀에 참가하셨습니다.\n팀 ID: " + player.teamId);
+      let res = team.join(args.join(""), player);
+      if(player.teamId) msg.reply("팀에 참가하셨습니다.\n팀 ID: " + player.teamId);
+      else msg.reply(res);
       break;
       
     case commands[10]: // 팀탈퇴
@@ -257,7 +259,7 @@ function isValid(player, content, type) {
 
 function huntForm(player) {
   let data = hunt.cache[player.hunt.id];
-  
+  Log.i(Object.keys(hunt.cache) + ":" + player.hunt.id)
   let buff = {
     mob: data.info.status.mobs.effects.buff,
     player: data.info.status.players.effects.buff
@@ -432,6 +434,7 @@ function Player(userHash, name, data) {
     id: null,
     type: false
   };
+  this.teamId = data.teamId || null;
   this.killer = data.killer || [];
   this.location = data.location || {
   in: {
@@ -472,8 +475,8 @@ Player.prototype.moveInLocation = function(newX, newY, reply) {
 Player.prototype.loadAllUsers = function() {
   return new File(localPath + "players/").list()
     .filter(v => 
-      new File(path + "players/" + v).isFile() && v.endsWith(".json"))
-    .map(v => JSON.parse(fs.read(path + "players/" + v)));
+      new File(localPath + "players/" + v).isFile() && v.endsWith(".json"))
+    .map(v => JSON.parse(FileStream.read(localPath + "players/" + v)));
 };
 
 Player.prototype.moveOutLocation = function(newX, newY, reply) {
@@ -618,31 +621,24 @@ Team.prototype.add = function(player) {
       });
   }
   
-  this.cache[uuid] = [player];
-  new Player().loadAllUsers()
-   .find(v => v.author.hash == player.author.hash)
-   .teamId = teamId;
+  this.cache[uuid] = [playeruserHash];
+  player.teamId = uuid;
 };
 
 Team.prototype.join = function(teamId, player) {
   let team = this.cache[teamId];
   if(!team) return `${teamId} is invalid teamId.`;
-  if(team.includes(id)) return `${id} is already in ${teamId} team.`;
+  if(team.includes(player.userHash)) return `${player.name} is already in ${teamId} team.`;
   team.push(player);
   
-  new Player().loadAllUsers()
-   .find(v => v.author.hash == player.author.hash)
-   .teamId = teamId;
+  player.teamId = teamId;
 };
 
-Team.prototype.leave = function(player) {
-  let player = new Player().loadAllUsers()
-  .find(v => v.author.hash == player.author.hash);
-   
+Team.prototype.leave = function(player) {   
   this.cache[player.teamId]
     .splice(
       this.cache[player.teamId]
-      .indexOf(player),
+      .indexOf(player.userHash),
       1
     );
     
@@ -1445,7 +1441,7 @@ function generateMobs(counts, mobs = []) {
       let entity = Object.assign({}, mobs[Math.random() * mobs.length | 0]);
       let uuid;
   
-      while(this.cache[uuid] || uuid == undefined) {
+      while(uuid == undefined) {
         uuid = "xxxxxxxxxxxxxxxx"
         .replace(/x/g, () => {
           return ((Math.random() * 16 | 0) & 0x3)
