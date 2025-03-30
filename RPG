@@ -17,7 +17,10 @@ let commands = [
   "거절",
   "사냥",
   "선택",
-  "공격"
+  "공격",
+  "팀생성",
+  "팀참가",
+  "팀탈퇴"
 ];
 
 commands = commands.map(v => prefix + v);
@@ -28,6 +31,7 @@ let npc = new Npc(getFile("npc")) || new Npc();
 let mob = new Mob(getFile("mob")) || new Mob();
 let hunt = new Hunt(getFile("hunt")) || new Hunt();
 let skill = new Skill(getFile("skill")) || new Skill();
+let team = new Team(getFile("team")) || new Team();
 let player;
 
 let ev = false;
@@ -41,7 +45,11 @@ function onMessage(msg) {
   /*cmd = msg.content.replace(prefix, "");
   player = new Player(msg.author.hash, msg.author.name, getFile(msg.author.hash)) || new Player(msg.author.hash, msg.author.name);
 */
+  try{
   handleMessage(msg);
+  } catch(e) {
+    msg.reply(e.stack + "\n\n" + e);
+  }
 
   updateFile(msg.author.hash, player);
   updateFile("hunt", hunt);
@@ -99,7 +107,7 @@ function handleMessage(msg) {
       let nearMobs = player.getNearMobs();
       let mobs = generateMobs(3, nearMobs);
       //mobs = setRandomPos(mobs);
-      hunt.add([player], mobs);
+      hunt.add(team.cache[player.teamId], mobs);
       reply(huntForm(player));
       break;
     
@@ -118,7 +126,6 @@ function handleMessage(msg) {
     
     case commands[7]://공격
       let data = isValid(player, msg.content.replace(cmd, "").trim(), "skill")
-      Log.i(JSON.stringify(data, null, 4));
       
       if(!data) {
         reply(false);
@@ -134,7 +141,7 @@ function handleMessage(msg) {
         reply(hunt.useSkill(player, player.choice + "s", data.index, skill.cache[data.skillId]));
         hunt.nextTurn(player.hunt.id, "players");
         
-      quest.update(player);
+      hunt.cache[player.hunt.id].players.forEach(v => quest.update(v));
       
         let isOver = hunt.isOver(player.hunt.id);
           
@@ -161,7 +168,7 @@ function handleMessage(msg) {
               break;
             }
         //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
-        while(hunt.cache[player.hunt.id] && hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
+        while(hunt.cache[player.hunt.id].info.turn.mob.isOver == false) {
           let index = hunt.cache[player.hunt.id].info.turn.mob.index;
           let entity = hunt.cache[player.hunt.id].mobs[index]
           let useSkill;
@@ -196,7 +203,29 @@ function handleMessage(msg) {
           //reply(JSON.stringify(hunt.cache[player.hunt.id], null, 4));
         }
       }
-      if(hunt.cache[player.hunt.id]) reply("[전투 로그 상세보기]" + Lw + huntForm(player));
+      reply("[전투 로그 상세보기]" + Lw + huntForm(player));
+      break;
+    
+    case commands[8]: // 팀생성
+      if(msg.content.trim() != commands[8]) return;
+      if(player.team != null) return msg.reply("이미 팀에 속해있습니다.");
+      
+      team.add(player);
+      msg.reply("팀 생성 완료.\n팀 ID: " + player.teamId);
+      break;
+    
+    case commands[9]: // 팀참가
+      if(msg.content.trim() != commands[8]) return msg.reply(prefix + commands[9] + " (ID) 형식으로 입력해주세요.");
+      if(player.team != null) return msg.reply("이미 팀에 속해있습니다.");
+      
+      team.join(player, args.join(""));
+      msg.reply("팀에 참가하셨습니다.\n팀 ID: " + player.teamId);
+      break;
+      
+    case commands[10]: // 팀탈퇴
+      if(player.team == null) return msg.reply("참가한 팀이 없습니다.");
+      team.leave(player);
+      msg.reply("팀을 떠났습니다.");
       break;
   }
   updateFile(msg.author.hash, player);
@@ -204,8 +233,10 @@ function handleMessage(msg) {
 
 function isValid(player, content, type) {
   let [skillIndex, mobIndex] = content.trim().split(" ");
+  Log.i([skillIndex, mobIndex, content]);
   if(isNaN(skillIndex) && isNaN(mobIndex) && mobIndex.trim() != "") return "형식에 맞지 않습니다.\n" + prefix + commands[7] + " (스킬 번호) (타겟 번호) 형식으로 입력해주세요.";
-  let skillId = player.loadAllSkills()[Number(skillIndex) - 1 | 0];
+  let skillId = player.loadAllSkills()[parseInt(skillIndex) - 1];
+  Log.i([skillIndex, mobIndex, skillId]);
   switch(type) {
     case "skill":
       if(mobIndex == "")
@@ -353,8 +384,9 @@ GameMap.prototype.setRequirement = function(name, newLv, newItem) {
 
 
 function Player(userHash, name, data) {
+  if(arguments.length == 0) return;
   this.name = data.name|| name;
-  this.userHash = data.userHash || userHash;
+  this.hash = data.hash || userHash;
   this.lv = data.lv || 0;
   this.exp = data.exp || 0;
   this.hunger = data.hunger || 100;
@@ -400,6 +432,7 @@ function Player(userHash, name, data) {
     id: null,
     type: false
   };
+  this.killer = data.killer || [];
   this.location = data.location || {
   in: {
   x: 0, 
@@ -434,6 +467,13 @@ Player.prototype.moveInLocation = function(newX, newY, reply) {
     reply("Moving Complete");
     updateFile(this.userHash, this);
   }, Math.round(time/2));
+};
+
+Player.prototype.loadAllUsers = function() {
+  return new File(localPath + "players/").list()
+    .filter(v => 
+      new File(path + "players/" + v).isFile() && v.endsWith(".json"))
+    .map(v => JSON.parse(fs.read(path + "players/" + v)));
 };
 
 Player.prototype.moveOutLocation = function(newX, newY, reply) {
@@ -474,7 +514,7 @@ Player.prototype.statuses = function () {
     "\nLocation Description: " + map.locations[movedPos].description +
     "\nLocation NPCs\n" + map.locations[movedPos].connectedNpc +
     "\n\n" + 
-    //questForm(this.quest) + 
+    questForm(this.quest) + 
     "\n\nInventory" + this.inventory + 
     "\n\nCan Go\n" + maps.map(v => map.locations[v]).map((v, i) => (i + 1) + v.name + 
     "\ntype: " + v.type + 
@@ -520,9 +560,9 @@ Player.prototype.getNearMobs = function() {
 
 Player.prototype.addExp = function(exp) {
   while(true) {
-    if(this.exp + exp >= this.lv * 100) {
-      this.exp = this.exp + exp - this.lv * 100;
-      this.lv++;
+    if(this.exp + exp >= this.exp * 100) {
+      this.exp = this.exp + exp - this.exp * 100;
+      user.lv++;
     }
     else if(this.exp + exp < this.exp * 100) {
       this.exp += exp;
@@ -534,7 +574,7 @@ Player.prototype.addExp = function(exp) {
 Player.prototype.addItems = function(items) {
   items.forEach(v => {
     if(this.inventory.find(item => item.id == v.id)) {
-      this.inventory.find(item => item.id == v.id).counts += v.counts;
+      this.inventody.find(item => item.id == v.id).counts += v.counts;
     } else {
       this.inventory.push({
         id: v.id,
@@ -542,6 +582,10 @@ Player.prototype.addItems = function(items) {
       });
     }
   });
+};
+
+Player.prototype.addSkills = function(skills) {
+  skills.forEach(v => this.giveSkill(v.id));
 };
 
 Player.prototype.loadAllSkills = function() {
@@ -556,8 +600,54 @@ Player.prototype.loadAllSkills = function() {
         }
       }
   let skillIdList = Array.concat(this.skills, itemSkill);
-  return skillIdList;
+  return skillIdList.map(v=> v.name.replace("${userName}", this.name));
+};
+
+function Team(data) {
+  this.cache = data.cache || {};
 }
+
+Team.prototype.add = function(player) {
+  let uuid;
+  
+  while(this.cache[uuid] || uuid == undefined) {
+    uuid = "xxxxxx"
+    .replace(/x/g, () => {
+      return ((Math.random() * 16 | 0) & 0x3)
+        .toString();
+      });
+  }
+  
+  this.cache[uuid] = [player];
+  new Player().loadAllUsers()
+   .find(v => v.author.hash == player.author.hash)
+   .teamId = teamId;
+};
+
+Team.prototype.join = function(teamId, player) {
+  let team = this.cache[teamId];
+  if(!team) return `${teamId} is invalid teamId.`;
+  if(team.includes(id)) return `${id} is already in ${teamId} team.`;
+  team.push(player);
+  
+  new Player().loadAllUsers()
+   .find(v => v.author.hash == player.author.hash)
+   .teamId = teamId;
+};
+
+Team.prototype.leave = function(player) {
+  let player = new Player().loadAllUsers()
+  .find(v => v.author.hash == player.author.hash);
+   
+  this.cache[player.teamId]
+    .splice(
+      this.cache[player.teamId]
+      .indexOf(player),
+      1
+    );
+    
+  player.teamId = null;
+};
 
 function Item(data) {
   this.list = data.list || {};
@@ -578,38 +668,55 @@ function Mob(data) {
   this.kind = data.kind || {};
 }
 
-Mob.prototype.add = function(name, description, skills, hp, agi, def, str, stamina, criticalPercent, inteligence) {
+Mob.prototype.add = function(name, description, skills, hp, agi, def, str, stamina, criticalPercent, inteligence, armor) {
   this.kind[name] = {
-  name: name, 
-  description: description, 
-  stat: {
-    hp: hp,
-    max_hp: hp,
-    agi: agi,
-    def: def,
-    str: str,
-    stamina: stamina,
-    criticalPercent: criticalPercent,
-    inteligence: inteligence
-  },
-  status: {
-    stun: 0,
-    dotDamage: {},
-    dotHeal: {}
-  },
-  hunt: {
-    id: null,
-    type: false
-  },
-  skills: skills,
-  location: {
-    in: {
-      x: 0,
-      y: 0
-    }
-  },
-  killers: [],
-  connectedLocation: []
+    name: name, 
+    description: description, 
+    stat: {
+      hp: hp,
+        max_hp: hp,
+      agi: agi,
+      def: def,
+      str: str,
+      stamina: stamina,
+      max_stamina: stamina,
+      criticalPercent: criticalPercent,
+      inteligence: inteligence
+    },
+    status: {
+      stun: 0,
+      dotDamage: {},
+      dotHeal: {}
+    },
+    hunt: {
+      id: null,
+      type: false
+    },
+    teamId: null,
+    skills: skills,
+    location: {
+      in: {
+        x: 0,
+        y: 0
+      }
+    },
+    killer: [],
+    armor: armor || {
+      head: null,
+      eye: null,
+      body: null,
+      back: null,
+      arm: {
+        right: null,
+        left: null
+      },
+      hands: {
+        right: null,
+        left: null
+      },
+      pants: null
+    },
+    connectedLocation: []
   };
 };
 
@@ -630,7 +737,7 @@ function Quest(data) {
   this.quest = data.quest || {};
 }
 
-Quest.prototype.add = function (type, name, description, lv, targetList, items, exp) {
+Quest.prototype.add = function (type, name, description, lv, targetList, items, skills, exp) {
   this.quest[name] = {
     name: name,
     description: description,
@@ -643,6 +750,7 @@ Quest.prototype.add = function (type, name, description, lv, targetList, items, 
     };
     this.quest[name].rewards = {
       items: items,
+      skills: skills,
       exp: exp
     };
   }
@@ -663,6 +771,7 @@ Quest.prototype.clear = function(user) {
   let rewards = user.quest.rewards;
   user.addExp(rewards.exp);
   user.addItems(rewards.items);
+  user.addSkills(rewards.skills);
   user.quest = null;
 };
 
@@ -675,14 +784,13 @@ Quest.prototype.update = function(user) {
     case "battle":
       let data = hunt.cache[user.hunt.id];
       let questMobs = data.info.status.mobs.dead.filter(v => 
-        v.killers.includes(user.userHash) &&
+        v.mob.killers.includes(user.hash) &&
         requirement.targetList.find(a => a.name == v.name));
-      if(questMobs.length != 0) {
+      if(questMob.length != 0) {
         requirement.targetList.forEach(v => {
-            v.nowCount += questMobs.filter(a => a.name == v.name).length;
+            v.nowCounts += questMob.filter(a => a.name == v.name).length;
           });
-          Log.i("list\n" + requirement.targetList.filter(v => v.counts > v.nowCount).length);
-        if(requirement.targetList.filter(v => v.counts > v.nowCount).length == 0)
+        if(requirement.targetList.filter(v => v.counts < v.nowCounts).length == 0)
           this.clear(user);
       }
       
@@ -981,7 +1089,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
   if(user.status.stun > 0) return 0;
   switch(skill.type) {
     case "dot_damage":
-      if(target.killers && !target.killers.includes(user.userHash)) target.killers.push(user.userHash);
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1003,7 +1111,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       target.status.stun = skill.stun;
       break;
     case "stun_damage":
-      if(target.killers && !target.killers.includes(user.userHash)) target.killers.push(user.userHash);
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1015,7 +1123,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       target.stat.hp -= skill.damage;
       break;
     case "blood":
-      if(target.killers && !target.killers.includes(user.userHash)) target.killers.push(user.userHash);
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1028,7 +1136,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       user.stat.hp += skill.heal;
       break;
     case "dot_blood":
-      if(target.killers && !target.killers.includes(user.userHash)) target.killers.push(user.userHash);
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1043,7 +1151,7 @@ Hunt.prototype.useSkill = function(user, choice, targetIndex, skill) {
       player.stat.hp += skill.heal;
       break;
     case "damage":
-      if(target.killers && !target.killers.includes(user.userHash)) target.killers.push(user.userHash);
+      target.killer.push(user.hash);
       if(skill.damage >= target.stat.hp) {
         hunt.info.status[choice].dead.push(target);
         hunt[choice].splice(targetIndex, 1);
@@ -1296,7 +1404,7 @@ Skill.prototype.delete = function (name) {
 };
 
 function updateFile(fileName, data) {
-  if(["quest", "map", "npc", "mob", "hunt", "pvp", "item", "store", "skill"].includes(fileName))
+  if(["quest", "map", "npc", "mob", "hunt", "pvp", "item", "store", "skill", "team"].includes(fileName))
     fileName = "/data/"+ fileName;
   else
     fileName = "/players/" + fileName;
@@ -1304,7 +1412,7 @@ function updateFile(fileName, data) {
 }
 
 function getFile(fileName) {
-  if(["quest", "map", "npc", "mob", "hunt", "pvp", "item", "store", "skill"].includes(fileName))
+  if(["quest", "map", "npc", "mob", "hunt", "pvp", "item", "store", "skill", "team"].includes(fileName))
     fileName = "/data/"+ fileName;
   else
     fileName = "/players/" + fileName;
@@ -1335,6 +1443,16 @@ function generateMobs(counts, mobs = []) {
     .fill(null)
     .map(v => {
       let entity = Object.assign({}, mobs[Math.random() * mobs.length | 0]);
+      let uuid;
+  
+      while(this.cache[uuid] || uuid == undefined) {
+        uuid = "xxxxxxxxxxxxxxxx"
+        .replace(/x/g, () => {
+          return ((Math.random() * 16 | 0) & 0x3)
+            .toString();
+          });
+      }
+      entity.hash = uuid;
       return JSON.parse(JSON.stringify(entity));
     });
 }
